@@ -1,0 +1,57 @@
+name: Build
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        default: ''
+        description: Version to build
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '21'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Print environment information
+        run: |
+          echo "GRAALVM_HOME: $GRAALVM_HOME"
+          echo "JAVA_HOME: $JAVA_HOME"
+          java --version
+          native-image --version
+      - name: Prepare environment
+        env:
+          APP_VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          cp example.env .env
+          APP_VERSION=${APP_VERSION/refs\/tags\/v/}
+          chmod +x ./gradlew
+          if [ -z "${APP_VERSION}" ]; then
+            APP_VERSION=$(./gradlew properties --no-daemon --console=plain -q | grep "^version:" | awk '{printf $2}')
+          fi
+          sed -i "s/version =.*\$/version = \"${APP_VERSION}\"/g" build.gradle.kts
+      - name: Build JAR
+        shell: bash
+        run: |
+          APP_VERSION=$(./gradlew properties --no-daemon --console=plain -q | grep "^version:" | awk '{printf $2}')
+          ./gradlew clean build
+          cp build/libs/lurker-themodders-${APP_VERSION}.jar ./lurker-themodders.jar
+      - name: Build native image
+        run: |
+          ./gradlew clean nativeCompile
+          cp build/native/nativeCompile/lurker-themodders ./lurker-themodders
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lurker-themodders
+          path: |
+            docker
+            .env
+            compose.yaml
+            lurker-themodders.jar
+            lurker-themodders

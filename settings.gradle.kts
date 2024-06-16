@@ -1,0 +1,2 @@
+rootProject.name = "lurker-themodders"
+
