@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZonedDateTime;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -71,6 +72,7 @@ public class DownloadService {
         private final Map<String, String> config;
         private final ExecutorService executor;
         private final AtomicLong jobCounter = new AtomicLong(0L);
+        private final Set<String> downloadedAssets = new HashSet<>();
 
         public DownloadServiceContext(DSLContext jooq, DownloadAdapter adapter, Map<String, String> config) {
             this.jooq = jooq;
@@ -368,9 +370,14 @@ public class DownloadService {
         }
 
         private void downloadAsset(Long id, String url) {
+            if (downloadedAssets.contains(url)) {
+                return;
+            }
+
             jobCounter.incrementAndGet();
             executor.submit(() -> {
                 log.info("Downloading asset {}", url);
+                downloadedAssets.add(url);
                 try (HttpClient httpClient = HttpClient.newHttpClient()) {
                     HttpRequest request = HttpRequest.newBuilder().GET().uri(URI.create(url)).build();
                     HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
