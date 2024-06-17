@@ -2,7 +2,6 @@ package pl.piotrmacha.lurker.domain;
 
 import org.jooq.DSLContext;
 import org.jooq.Record;
-import org.jooq.Record1;
 import org.jooq.Result;
 import org.jooq.exception.IntegrityConstraintViolationException;
 import org.slf4j.Logger;
@@ -10,6 +9,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.DigestUtils;
 import pl.piotrmacha.lurker.jooq.Sequences;
 import pl.piotrmacha.lurker.jooq.Tables;
+import sun.misc.Signal;
+import sun.misc.SignalHandler;
 
 import java.io.IOException;
 import java.net.URI;
@@ -28,6 +29,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static pl.piotrmacha.lurker.domain.DownloadContext.*;
@@ -82,13 +84,32 @@ public class DownloadService {
                     Integer.parseInt(config.get(CONFIG_THREAD_POOL_THREADS)),
                     config.get(CONFIG_THREAD_POOL_VIRTUAL).equals("true") ? Thread.ofVirtual().factory() : Thread.ofPlatform().factory()
             );
+
         }
 
         public void runAndWaitForFinish() {
             Instant start = Instant.now();
             Instant lastCheckpoint = Instant.EPOCH;
+            AtomicBoolean forceExit = new AtomicBoolean(false);
+
+            Signal.handle(new Signal("INT"), signal -> {
+                log.info("Received {} signal. Stopping forcefully, but gracefully...", signal.getName());
+                forceExit.set(true);
+            });
+
+            Signal.handle(new Signal("TERM"), signal -> {
+                log.info("Received {} signal. Stopping right now...", signal.getName());
+                System.exit(0);
+            });
+
             log.info("Starting download");
             while (jobCounter.get() > 0) {
+                if (forceExit.get()) {
+                    log.info("Forcing exit...");
+                    executor.shutdownNow();
+                    break;
+                }
+
                 Instant now = Instant.now();
                 if (now.getEpochSecond() - lastCheckpoint.getEpochSecond() > 60) {
                     log.info("Waiting for {} jobs to finish", jobCounter.get());
@@ -96,13 +117,18 @@ public class DownloadService {
                 }
 
                 try {
-                    Thread.sleep(1000);
+                    Thread.sleep(500);
                 } catch (InterruptedException e) {
                     log.warn("Sleep interrupted on a thread waiting for jobs to finish");
                     Thread.yield();
                 }
             }
-            log.info("All jobs finished in {}", Duration.between(start, Instant.now()));
+
+            if (!forceExit.get()) {
+                log.info("All jobs finished in {}", Duration.between(start, Instant.now()));
+            }
+
+            System.exit(0);
         }
 
         @Override
@@ -348,7 +374,12 @@ public class DownloadService {
                 try {
                     adapter.download(url, type, id, this, config);
                 } catch (Exception e) {
-                    log.error("Error downloading {}", url, e);
+                    log.error("Error downloading {}. {}: {}", url, e.getClass().getCanonicalName(), e.getMessage());
+                    try {
+                        Thread.currentThread().join(1);
+                    } catch (InterruptedException ex) {
+                        // Ignore
+                    }
                 } finally {
                     jobCounter.getAndDecrement();
                     if (config.get(CONFIG_SAVE_VISITED).equals("true")) {
@@ -402,11 +433,19 @@ public class DownloadService {
                                     response.body()
                             );
                         }
+
+                        log.info("Downloaded asset {}", url);
+                    } else {
+                        log.error("Failed to download asset {}. Status code: {}", url, response.statusCode());
                     }
                 } catch (Exception e) {
-                    log.error("Error downloading asset {}", url, e);
+                    log.error("Error downloading asset {}. {}: {}", url, e.getClass().getCanonicalName(), e.getMessage());
+                    try {
+                        Thread.currentThread().join(1);
+                    } catch (InterruptedException ex) {
+                        // Ignore
+                    }
                 } finally {
-                    log.info("Downloaded asset {}", url);
                     jobCounter.decrementAndGet();
                 }
             });

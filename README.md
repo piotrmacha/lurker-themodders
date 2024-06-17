@@ -9,7 +9,8 @@ Download release package from the [releases page](https://github.com/piotrmacha/
 
 * **lurker-themodders-java21.zip** - Application compiled for Java 21+ runtime as a standalone JAR file.
 * **lurker-themodders-linux-amd64.zip** - Application compiled as native image for Linux x86_64. 
-  May contain bugs - in case of problems, use the Java version. 
+
+  **Warning**: May contain bugs - in case of problems, use the Java version. 
 
 ### Start Docker PostgreSQL
 
@@ -35,7 +36,7 @@ java -Xmx1G -jar ./lurker-themodders.jar download \
 
 ```shell
 export $(cat .env | xargs)
-java -Xmx1G -jar ./lurker-themodders.jar \ 
+java -Xmx1G -jar ./lurker-themodders.jar download-recent \ 
   --save-visited true \ 
   --skip-visited false \ 
   --asset-database false \ 
