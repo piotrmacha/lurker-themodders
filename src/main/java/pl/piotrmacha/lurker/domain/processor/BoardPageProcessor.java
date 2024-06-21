@@ -1,6 +1,7 @@
 package pl.piotrmacha.lurker.domain.processor;
 
 import lombok.extern.slf4j.Slf4j;
+import org.jooq.exception.IntegrityConstraintViolationException;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import pl.piotrmacha.lurker.domain.*;
@@ -52,8 +53,17 @@ public class BoardPageProcessor extends DelegatePageProcessor {
         Board parent = Board.dao().findByOid(String.valueOf(parentOid))
                 .orElseThrow(() -> new RuntimeException("Parent board not found oid=" + parentOid));
 
+        if (Board.dao().findByOid(String.valueOf(uri.id())).isPresent()) {
+            service().addTask(DownloadQueue.TaskType.BOARD, uri.asPageUri(), (long) uri.id());
+            return;
+        }
+
         Board board = Board.of(String.valueOf(uri.id()), uri.normalize().toString(), boardName, boardDescription, parent.id());
-        Board.dao().save(board);
+        try {
+            Board.dao().save(board);
+        } catch (IntegrityConstraintViolationException e) {
+            // ignore, board exists
+        }
 
         service().addTask(DownloadQueue.TaskType.BOARD, uri.asPageUri(), (long) uri.id());
     }
@@ -67,8 +77,17 @@ public class BoardPageProcessor extends DelegatePageProcessor {
         Board board = Board.dao().findByOid(String.valueOf(boardOid))
                 .orElseThrow(() -> new RuntimeException("Board not found oid=" + boardOid));
 
+        if (Topic.dao().findByOid(String.valueOf(uri.id())).isPresent()) {
+            service().addTask(DownloadQueue.TaskType.TOPIC, uri.asPageUri(), (long) uri.id());
+            return;
+        }
+
         Topic topic = Topic.of(String.valueOf(uri.id()), uri.normalize().toString(), board.id()).withTitle(title);
-        Topic.dao().save(topic);
+        try {
+            Topic.dao().save(topic);
+        } catch (IntegrityConstraintViolationException e) {
+            // ignore, topic exists
+        }
 
         service().addTask(DownloadQueue.TaskType.TOPIC, uri.asPageUri(), (long) uri.id());
     }
