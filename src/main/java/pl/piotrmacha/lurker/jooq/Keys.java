@@ -12,18 +12,28 @@ import org.jooq.impl.Internal;
 
 import pl.piotrmacha.lurker.jooq.tables.Account;
 import pl.piotrmacha.lurker.jooq.tables.Asset;
-import pl.piotrmacha.lurker.jooq.tables.Category;
+import pl.piotrmacha.lurker.jooq.tables.Board;
+import pl.piotrmacha.lurker.jooq.tables.DownloadQueue;
+import pl.piotrmacha.lurker.jooq.tables.DownloadQueueDone;
+import pl.piotrmacha.lurker.jooq.tables.DownloadQueueFailure;
+import pl.piotrmacha.lurker.jooq.tables.DownloadQueueScheduled;
 import pl.piotrmacha.lurker.jooq.tables.FlywaySchemaHistory;
 import pl.piotrmacha.lurker.jooq.tables.Post;
-import pl.piotrmacha.lurker.jooq.tables.Thread;
-import pl.piotrmacha.lurker.jooq.tables.VisitedUrl;
+import pl.piotrmacha.lurker.jooq.tables.PostAttachment;
+import pl.piotrmacha.lurker.jooq.tables.PostFulltext;
+import pl.piotrmacha.lurker.jooq.tables.Topic;
 import pl.piotrmacha.lurker.jooq.tables.records.AccountRecord;
 import pl.piotrmacha.lurker.jooq.tables.records.AssetRecord;
-import pl.piotrmacha.lurker.jooq.tables.records.CategoryRecord;
+import pl.piotrmacha.lurker.jooq.tables.records.BoardRecord;
+import pl.piotrmacha.lurker.jooq.tables.records.DownloadQueueDoneRecord;
+import pl.piotrmacha.lurker.jooq.tables.records.DownloadQueueFailureRecord;
+import pl.piotrmacha.lurker.jooq.tables.records.DownloadQueueRecord;
+import pl.piotrmacha.lurker.jooq.tables.records.DownloadQueueScheduledRecord;
 import pl.piotrmacha.lurker.jooq.tables.records.FlywaySchemaHistoryRecord;
+import pl.piotrmacha.lurker.jooq.tables.records.PostAttachmentRecord;
+import pl.piotrmacha.lurker.jooq.tables.records.PostFulltextRecord;
 import pl.piotrmacha.lurker.jooq.tables.records.PostRecord;
-import pl.piotrmacha.lurker.jooq.tables.records.ThreadRecord;
-import pl.piotrmacha.lurker.jooq.tables.records.VisitedUrlRecord;
+import pl.piotrmacha.lurker.jooq.tables.records.TopicRecord;
 
 
 /**
@@ -39,20 +49,30 @@ public class Keys {
 
     public static final UniqueKey<AccountRecord> ACCOUNT_PKEY = Internal.createUniqueKey(Account.ACCOUNT, DSL.name("account_pkey"), new TableField[] { Account.ACCOUNT.ID }, true);
     public static final UniqueKey<AssetRecord> ASSET_PKEY = Internal.createUniqueKey(Asset.ASSET, DSL.name("asset_pkey"), new TableField[] { Asset.ASSET.ID }, true);
-    public static final UniqueKey<CategoryRecord> CATEGORY_PKEY = Internal.createUniqueKey(Category.CATEGORY, DSL.name("category_pkey"), new TableField[] { Category.CATEGORY.ID }, true);
+    public static final UniqueKey<BoardRecord> BOARD_PKEY = Internal.createUniqueKey(Board.BOARD, DSL.name("board_pkey"), new TableField[] { Board.BOARD.ID }, true);
+    public static final UniqueKey<DownloadQueueRecord> DOWNLOAD_QUEUE_PKEY = Internal.createUniqueKey(DownloadQueue.DOWNLOAD_QUEUE, DSL.name("download_queue_pkey"), new TableField[] { DownloadQueue.DOWNLOAD_QUEUE.ID }, true);
+    public static final UniqueKey<DownloadQueueDoneRecord> DOWNLOAD_QUEUE_DONE_PKEY = Internal.createUniqueKey(DownloadQueueDone.DOWNLOAD_QUEUE_DONE, DSL.name("download_queue_done_pkey"), new TableField[] { DownloadQueueDone.DOWNLOAD_QUEUE_DONE.ID }, true);
+    public static final UniqueKey<DownloadQueueFailureRecord> DOWNLOAD_QUEUE_FAILURE_PKEY = Internal.createUniqueKey(DownloadQueueFailure.DOWNLOAD_QUEUE_FAILURE, DSL.name("download_queue_failure_pkey"), new TableField[] { DownloadQueueFailure.DOWNLOAD_QUEUE_FAILURE.ID }, true);
+    public static final UniqueKey<DownloadQueueScheduledRecord> DOWNLOAD_QUEUE_SCHEDULED_PKEY = Internal.createUniqueKey(DownloadQueueScheduled.DOWNLOAD_QUEUE_SCHEDULED, DSL.name("download_queue_scheduled_pkey"), new TableField[] { DownloadQueueScheduled.DOWNLOAD_QUEUE_SCHEDULED.ID }, true);
     public static final UniqueKey<FlywaySchemaHistoryRecord> FLYWAY_SCHEMA_HISTORY_PK = Internal.createUniqueKey(FlywaySchemaHistory.FLYWAY_SCHEMA_HISTORY, DSL.name("flyway_schema_history_pk"), new TableField[] { FlywaySchemaHistory.FLYWAY_SCHEMA_HISTORY.INSTALLED_RANK }, true);
     public static final UniqueKey<PostRecord> POST_PKEY = Internal.createUniqueKey(Post.POST, DSL.name("post_pkey"), new TableField[] { Post.POST.ID }, true);
-    public static final UniqueKey<ThreadRecord> THREAD_PKEY = Internal.createUniqueKey(Thread.THREAD, DSL.name("thread_pkey"), new TableField[] { Thread.THREAD.ID }, true);
-    public static final UniqueKey<VisitedUrlRecord> VISITED_URL_PKEY = Internal.createUniqueKey(VisitedUrl.VISITED_URL, DSL.name("visited_url_pkey"), new TableField[] { VisitedUrl.VISITED_URL.URL }, true);
+    public static final UniqueKey<PostAttachmentRecord> POST_ATTACHMENT_PKEY = Internal.createUniqueKey(PostAttachment.POST_ATTACHMENT, DSL.name("post_attachment_pkey"), new TableField[] { PostAttachment.POST_ATTACHMENT.POST_ID, PostAttachment.POST_ATTACHMENT.ASSET_ID }, true);
+    public static final UniqueKey<PostFulltextRecord> POST_FULLTEXT_PKEY = Internal.createUniqueKey(PostFulltext.POST_FULLTEXT, DSL.name("post_fulltext_pkey"), new TableField[] { PostFulltext.POST_FULLTEXT.POST_ID }, true);
+    public static final UniqueKey<TopicRecord> TOPIC_PKEY = Internal.createUniqueKey(Topic.TOPIC, DSL.name("topic_pkey"), new TableField[] { Topic.TOPIC.ID }, true);
 
     // -------------------------------------------------------------------------
     // FOREIGN KEY definitions
     // -------------------------------------------------------------------------
 
-    public static final ForeignKey<AccountRecord, AssetRecord> ACCOUNT__ACCOUNT_AVATAR_FKEY = Internal.createForeignKey(Account.ACCOUNT, DSL.name("account_avatar_fkey"), new TableField[] { Account.ACCOUNT.AVATAR }, Keys.ASSET_PKEY, new TableField[] { Asset.ASSET.ID }, true);
-    public static final ForeignKey<CategoryRecord, CategoryRecord> CATEGORY__CATEGORY_PARENT_FKEY = Internal.createForeignKey(Category.CATEGORY, DSL.name("category_parent_fkey"), new TableField[] { Category.CATEGORY.PARENT }, Keys.CATEGORY_PKEY, new TableField[] { Category.CATEGORY.ID }, true);
-    public static final ForeignKey<PostRecord, AccountRecord> POST__POST_AUTHOR_FKEY = Internal.createForeignKey(Post.POST, DSL.name("post_author_fkey"), new TableField[] { Post.POST.AUTHOR }, Keys.ACCOUNT_PKEY, new TableField[] { Account.ACCOUNT.ID }, true);
-    public static final ForeignKey<PostRecord, ThreadRecord> POST__POST_THREAD_FKEY = Internal.createForeignKey(Post.POST, DSL.name("post_thread_fkey"), new TableField[] { Post.POST.THREAD }, Keys.THREAD_PKEY, new TableField[] { Thread.THREAD.ID }, true);
-    public static final ForeignKey<ThreadRecord, AccountRecord> THREAD__THREAD_AUTHOR_FKEY = Internal.createForeignKey(Thread.THREAD, DSL.name("thread_author_fkey"), new TableField[] { Thread.THREAD.AUTHOR }, Keys.ACCOUNT_PKEY, new TableField[] { Account.ACCOUNT.ID }, true);
-    public static final ForeignKey<ThreadRecord, CategoryRecord> THREAD__THREAD_CATEGORY_FKEY = Internal.createForeignKey(Thread.THREAD, DSL.name("thread_category_fkey"), new TableField[] { Thread.THREAD.CATEGORY }, Keys.CATEGORY_PKEY, new TableField[] { Category.CATEGORY.ID }, true);
+    public static final ForeignKey<AccountRecord, AssetRecord> ACCOUNT__ACCOUNT_AVATAR_ID_FKEY = Internal.createForeignKey(Account.ACCOUNT, DSL.name("account_avatar_id_fkey"), new TableField[] { Account.ACCOUNT.AVATAR_ID }, Keys.ASSET_PKEY, new TableField[] { Asset.ASSET.ID }, true);
+    public static final ForeignKey<BoardRecord, BoardRecord> BOARD__BOARD_PARENT_ID_FKEY = Internal.createForeignKey(Board.BOARD, DSL.name("board_parent_id_fkey"), new TableField[] { Board.BOARD.PARENT_ID }, Keys.BOARD_PKEY, new TableField[] { Board.BOARD.ID }, true);
+    public static final ForeignKey<PostRecord, AccountRecord> POST__POST_AUTHOR_ID_FKEY = Internal.createForeignKey(Post.POST, DSL.name("post_author_id_fkey"), new TableField[] { Post.POST.AUTHOR_ID }, Keys.ACCOUNT_PKEY, new TableField[] { Account.ACCOUNT.ID }, true);
+    public static final ForeignKey<PostRecord, TopicRecord> POST__POST_TOPIC_ID_FKEY = Internal.createForeignKey(Post.POST, DSL.name("post_topic_id_fkey"), new TableField[] { Post.POST.TOPIC_ID }, Keys.TOPIC_PKEY, new TableField[] { Topic.TOPIC.ID }, true);
+    public static final ForeignKey<PostAttachmentRecord, AssetRecord> POST_ATTACHMENT__POST_ATTACHMENT_ASSET_ID_FKEY = Internal.createForeignKey(PostAttachment.POST_ATTACHMENT, DSL.name("post_attachment_asset_id_fkey"), new TableField[] { PostAttachment.POST_ATTACHMENT.ASSET_ID }, Keys.ASSET_PKEY, new TableField[] { Asset.ASSET.ID }, true);
+    public static final ForeignKey<PostAttachmentRecord, PostRecord> POST_ATTACHMENT__POST_ATTACHMENT_POST_ID_FKEY = Internal.createForeignKey(PostAttachment.POST_ATTACHMENT, DSL.name("post_attachment_post_id_fkey"), new TableField[] { PostAttachment.POST_ATTACHMENT.POST_ID }, Keys.POST_PKEY, new TableField[] { Post.POST.ID }, true);
+    public static final ForeignKey<PostFulltextRecord, AccountRecord> POST_FULLTEXT__POST_FULLTEXT_AUTHOR_ID_FKEY = Internal.createForeignKey(PostFulltext.POST_FULLTEXT, DSL.name("post_fulltext_author_id_fkey"), new TableField[] { PostFulltext.POST_FULLTEXT.AUTHOR_ID }, Keys.ACCOUNT_PKEY, new TableField[] { Account.ACCOUNT.ID }, true);
+    public static final ForeignKey<PostFulltextRecord, PostRecord> POST_FULLTEXT__POST_FULLTEXT_POST_ID_FKEY = Internal.createForeignKey(PostFulltext.POST_FULLTEXT, DSL.name("post_fulltext_post_id_fkey"), new TableField[] { PostFulltext.POST_FULLTEXT.POST_ID }, Keys.POST_PKEY, new TableField[] { Post.POST.ID }, true);
+    public static final ForeignKey<PostFulltextRecord, TopicRecord> POST_FULLTEXT__POST_FULLTEXT_TOPIC_ID_FKEY = Internal.createForeignKey(PostFulltext.POST_FULLTEXT, DSL.name("post_fulltext_topic_id_fkey"), new TableField[] { PostFulltext.POST_FULLTEXT.TOPIC_ID }, Keys.TOPIC_PKEY, new TableField[] { Topic.TOPIC.ID }, true);
+    public static final ForeignKey<TopicRecord, AccountRecord> TOPIC__TOPIC_AUTHOR_ID_FKEY = Internal.createForeignKey(Topic.TOPIC, DSL.name("topic_author_id_fkey"), new TableField[] { Topic.TOPIC.AUTHOR_ID }, Keys.ACCOUNT_PKEY, new TableField[] { Account.ACCOUNT.ID }, true);
+    public static final ForeignKey<TopicRecord, BoardRecord> TOPIC__TOPIC_BOARD_ID_FKEY = Internal.createForeignKey(Topic.TOPIC, DSL.name("topic_board_id_fkey"), new TableField[] { Topic.TOPIC.BOARD_ID }, Keys.BOARD_PKEY, new TableField[] { Board.BOARD.ID }, true);
 }

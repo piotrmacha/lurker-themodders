@@ -6,11 +6,16 @@ package pl.piotrmacha.lurker.jooq;
 
 import pl.piotrmacha.lurker.jooq.tables.Account;
 import pl.piotrmacha.lurker.jooq.tables.Asset;
-import pl.piotrmacha.lurker.jooq.tables.Category;
+import pl.piotrmacha.lurker.jooq.tables.Board;
+import pl.piotrmacha.lurker.jooq.tables.DownloadQueue;
+import pl.piotrmacha.lurker.jooq.tables.DownloadQueueDone;
+import pl.piotrmacha.lurker.jooq.tables.DownloadQueueFailure;
+import pl.piotrmacha.lurker.jooq.tables.DownloadQueueScheduled;
 import pl.piotrmacha.lurker.jooq.tables.FlywaySchemaHistory;
 import pl.piotrmacha.lurker.jooq.tables.Post;
-import pl.piotrmacha.lurker.jooq.tables.Thread;
-import pl.piotrmacha.lurker.jooq.tables.VisitedUrl;
+import pl.piotrmacha.lurker.jooq.tables.PostAttachment;
+import pl.piotrmacha.lurker.jooq.tables.PostFulltext;
+import pl.piotrmacha.lurker.jooq.tables.Topic;
 
 
 /**
@@ -30,9 +35,29 @@ public class Tables {
     public static final Asset ASSET = Asset.ASSET;
 
     /**
-     * The table <code>public.category</code>.
+     * The table <code>public.board</code>.
      */
-    public static final Category CATEGORY = Category.CATEGORY;
+    public static final Board BOARD = Board.BOARD;
+
+    /**
+     * The table <code>public.download_queue</code>.
+     */
+    public static final DownloadQueue DOWNLOAD_QUEUE = DownloadQueue.DOWNLOAD_QUEUE;
+
+    /**
+     * The table <code>public.download_queue_done</code>.
+     */
+    public static final DownloadQueueDone DOWNLOAD_QUEUE_DONE = DownloadQueueDone.DOWNLOAD_QUEUE_DONE;
+
+    /**
+     * The table <code>public.download_queue_failure</code>.
+     */
+    public static final DownloadQueueFailure DOWNLOAD_QUEUE_FAILURE = DownloadQueueFailure.DOWNLOAD_QUEUE_FAILURE;
+
+    /**
+     * The table <code>public.download_queue_scheduled</code>.
+     */
+    public static final DownloadQueueScheduled DOWNLOAD_QUEUE_SCHEDULED = DownloadQueueScheduled.DOWNLOAD_QUEUE_SCHEDULED;
 
     /**
      * The table <code>public.flyway_schema_history</code>.
@@ -45,12 +70,17 @@ public class Tables {
     public static final Post POST = Post.POST;
 
     /**
-     * The table <code>public.thread</code>.
+     * The table <code>public.post_attachment</code>.
      */
-    public static final Thread THREAD = Thread.THREAD;
+    public static final PostAttachment POST_ATTACHMENT = PostAttachment.POST_ATTACHMENT;
 
     /**
-     * The table <code>public.visited_url</code>.
+     * The table <code>public.post_fulltext</code>.
      */
-    public static final VisitedUrl VISITED_URL = VisitedUrl.VISITED_URL;
+    public static final PostFulltext POST_FULLTEXT = PostFulltext.POST_FULLTEXT;
+
+    /**
+     * The table <code>public.topic</code>.
+     */
+    public static final Topic TOPIC = Topic.TOPIC;
 }

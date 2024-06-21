@@ -1,454 +1,258 @@
 package pl.piotrmacha.lurker.domain;
 
+import com.github.rholder.retry.*;
+import com.google.common.collect.Comparators;
+import com.google.common.util.concurrent.RateLimiter;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.jooq.DSLContext;
-import org.jooq.Record;
-import org.jooq.Result;
-import org.jooq.exception.IntegrityConstraintViolationException;
-import org.slf4j.Logger;
-import org.springframework.stereotype.Component;
-import org.springframework.util.DigestUtils;
-import pl.piotrmacha.lurker.jooq.Sequences;
+import org.jooq.Field;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.springframework.shell.standard.ShellComponent;
+import org.springframework.shell.standard.ShellMethod;
+import org.springframework.shell.standard.ShellOption;
+import pl.piotrmacha.lurker.domain.processor.BoardPageProcessor;
+import pl.piotrmacha.lurker.domain.processor.IndexPageProcessor;
+import pl.piotrmacha.lurker.domain.processor.NewPostsPageProcessor;
+import pl.piotrmacha.lurker.domain.processor.TopicPageProcessor;
 import pl.piotrmacha.lurker.jooq.Tables;
 import sun.misc.Signal;
-import sun.misc.SignalHandler;
 
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
-import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.time.ZonedDateTime;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.*;
+import java.util.concurrent.*;
 
-import static pl.piotrmacha.lurker.domain.DownloadContext.*;
-
-@Component
+@Slf4j
+@ShellComponent
+@RequiredArgsConstructor
 public class DownloadService {
-    private static final Logger log = org.slf4j.LoggerFactory.getLogger(DownloadService.class);
+    private final DownloadQueue queue;
     private final DSLContext jooq;
+    private final AbstractPageProcessor indexPageProcessor = new IndexPageProcessor(this);
+    private final AbstractPageProcessor boardPageProcessor = new BoardPageProcessor(this);
+    private final AbstractPageProcessor topicPageProcessor = new TopicPageProcessor(this);
+    private final AbstractPageProcessor newPostsPageProcessor = new NewPostsPageProcessor(this);
+    private final ExecutorService executor = Executors.newFixedThreadPool(64, new ThreadFactoryBuilder()
+            .setThreadFactory(Thread.ofPlatform().factory())
+            .setNameFormat("executor-%d")
+            .build());
+    private final RateLimiter httpRateLimiter = RateLimiter.create(5.0);
+    private Path assetsDirectory = Path.of("./assets/");
 
-    public DownloadService(DSLContext jooq) {
-        this.jooq = jooq;
-    }
+    @ShellMethod(value = "Build download queue", key = "build-index")
+    public void buildIndex(
+            @ShellOption(value = "--uri", defaultValue = "https://themodders.org") URI uri
+    ) throws IOException {
+        PageInfo index = new PageInfo.Uri(uri);
+        Document document = getDocument(uri.toString());
+        indexPageProcessor.process(index, document, indexPageProcessor);
+        Signal.handle(new Signal("INT"), signal -> {
+            log.info("Existing...");
+            executor.shutdown();
+            System.exit(0);
+        });
 
-    public void download(DownloadAdapter adapter, String url, String type, Map<String, String> config) {
-        log.info("Configuration: {}", config);
+        List<Future<TaskResult>> tasks = new ArrayList<>();
+        int tasksEmptyTimes = 0;
+        while (queue.size() > 0 || !tasks.isEmpty()) {
+            queue.poll(Set.of(DownloadQueue.TaskType.BOARD))
+                    .map(task -> (Callable<TaskResult>) () -> processTask(task))
+                    .map(executor::submit)
+                    .ifPresent(tasks::add);
 
-        if (config.get(CONFIG_CLEAR_VISITED).equals("true")){
-            jooq.delete(Tables.VISITED_URL).execute();
-        }
+            List<Future<TaskResult>> futuresDone = tasks.stream().filter(Future::isDone).peek(Future::resultNow).toList();
+            tasks.removeAll(futuresDone);
 
-        if (config.get(CONFIG_ASSET_FILESYSTEM).equals("true")) {
-            Path assetDir = Path.of(config.get(CONFIG_ASSET_FILESYSTEM_DIR));
-            if (Files.notExists(assetDir)) {
-                log.info("Creating directory: {}", assetDir);
-                try {
-                    Files.createDirectories(assetDir);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-        }
-
-        DownloadServiceContext context = new DownloadServiceContext(jooq, adapter, config);
-        context.enqueueDownload(url, type, "", true);
-        context.runAndWaitForFinish();
-    }
-
-    static class DownloadServiceContext implements DownloadContext {
-        private static final Logger log = org.slf4j.LoggerFactory.getLogger(DownloadServiceContext.class);
-        private final DSLContext jooq;
-        private final DownloadAdapter adapter;
-        private final Map<String, String> config;
-        private final ExecutorService executor;
-        private final AtomicLong jobCounter = new AtomicLong(0L);
-        private final Set<String> downloadedAssets = new HashSet<>();
-
-        public DownloadServiceContext(DSLContext jooq, DownloadAdapter adapter, Map<String, String> config) {
-            this.jooq = jooq;
-            this.adapter = adapter;
-            this.config = config;
-            this.executor = Executors.newFixedThreadPool(
-                    Integer.parseInt(config.get(CONFIG_THREAD_POOL_THREADS)),
-                    config.get(CONFIG_THREAD_POOL_VIRTUAL).equals("true") ? Thread.ofVirtual().factory() : Thread.ofPlatform().factory()
-            );
-
-        }
-
-        public void runAndWaitForFinish() {
-            Instant start = Instant.now();
-            Instant lastCheckpoint = Instant.EPOCH;
-            AtomicBoolean forceExit = new AtomicBoolean(false);
-
-            Signal.handle(new Signal("INT"), signal -> {
-                log.info("Received {} signal. Stopping forcefully, but gracefully...", signal.getName());
-                forceExit.set(true);
-            });
-
-            Signal.handle(new Signal("TERM"), signal -> {
-                log.info("Received {} signal. Stopping right now...", signal.getName());
-                System.exit(0);
-            });
-
-            log.info("Starting download");
-            while (jobCounter.get() > 0) {
-                if (forceExit.get()) {
-                    log.info("Forcing exit...");
-                    executor.shutdownNow();
+            if (tasks.isEmpty()) {
+                tasksEmptyTimes++;
+                if (tasksEmptyTimes > 100) {
                     break;
                 }
-
-                Instant now = Instant.now();
-                if (now.getEpochSecond() - lastCheckpoint.getEpochSecond() > 60) {
-                    log.info("Waiting for {} jobs to finish", jobCounter.get());
-                    lastCheckpoint = now;
-                }
-
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException e) {
-                    log.warn("Sleep interrupted on a thread waiting for jobs to finish");
-                    Thread.yield();
-                }
+            } else {
+                tasksEmptyTimes = 0;
             }
+        }
 
-            if (!forceExit.get()) {
-                log.info("All jobs finished in {}", Duration.between(start, Instant.now()));
-            }
+        log.info("Index built successfully");
+        executor.shutdown();
+    }
 
+    @ShellMethod(value = "Build download queue from new posts", key = "build-new-posts")
+    public void buildNewPosts(
+            @ShellOption(value = "--uri", defaultValue = "https://themodders.org/index.php?action=recent") URI uri
+    ) throws IOException {
+        Signal.handle(new Signal("INT"), signal -> {
+            log.info("Existing...");
+            executor.shutdown();
             System.exit(0);
+        });
+
+        for (int i = 0; i < 100; i += 10) {
+            PageInfo index = new PageInfo.Uri(URI.create(uri.toString() + ";start=" + i));
+            Document document = getDocument(index.uri().toString());
+            newPostsPageProcessor.process(index, document, newPostsPageProcessor);
         }
 
-        @Override
-        public Long saveAsset(String name, String url) {
-            Result<Record> existing = jooq.select().from(Tables.ASSET)
-                    .where(Tables.ASSET.URL.eq(url))
-                    .fetch();
+        log.info("New posts index built");
+        executor.shutdown();
+    }
 
-            if (existing.isEmpty()) {
-                Long id = jooq.nextval(Sequences.ASSET_ID_SEQ);
-                try {
-                    jooq.insertInto(Tables.ASSET)
-                            .set(Tables.ASSET.ID, id)
-                            .set(Tables.ASSET.NAME, name)
-                            .set(Tables.ASSET.URL, url)
-                            .execute();
-                    downloadAsset(id, url);
-                    return id;
-                } catch (IntegrityConstraintViolationException e) {
-                    jooq.update(Tables.ASSET)
-                            .set(Tables.ASSET.NAME, name)
-                            .set(Tables.ASSET.URL, url)
-                            .where(Tables.ASSET.ID.eq(id))
-                            .execute();
-                    downloadAsset(id, url);
-                    return id;
+    @ShellMethod(value = "Download topics from queue", key = "download-topics")
+    public void downloadTopics(
+            @ShellOption(value = "--dir", defaultValue = "./assets/") String dir
+    ) throws IOException {
+        if (dir != null && !dir.isBlank()) {
+            assetsDirectory = Path.of(dir);
+        }
+        Signal.handle(new Signal("INT"), signal -> {
+            log.info("Existing...");
+            executor.shutdown();
+            System.exit(0);
+        });
+
+        jooq.update(Tables.DOWNLOAD_QUEUE)
+                .set(Tables.DOWNLOAD_QUEUE.LOCKED_AT, (OffsetDateTime) null)
+                .execute();
+
+        List<Future<TaskResult>> tasks = new ArrayList<>();
+        int tasksEmptyTimes = 0;
+        while (queue.size(Set.of(DownloadQueue.TaskType.TOPIC, DownloadQueue.TaskType.ASSET)) > 0 || !tasks.isEmpty()) {
+            queue.poll(Set.of(DownloadQueue.TaskType.TOPIC, DownloadQueue.TaskType.ASSET))
+                    .map(task -> (Callable<TaskResult>) () -> processTask(task))
+                    .map(executor::submit)
+                    .ifPresent(tasks::add);
+
+            List<Future<TaskResult>> futuresDone = tasks.stream().filter(Future::isDone).peek(Future::resultNow).toList();
+            tasks.removeAll(futuresDone);
+
+            if (tasks.isEmpty()) {
+                tasksEmptyTimes++;
+                if (tasksEmptyTimes > 100) {
+                    break;
                 }
             } else {
-                if (existing.getFirst().get(Tables.ASSET.DATA) == null) {
-                    downloadAsset(existing.getFirst().get(Tables.ASSET.ID), url);
-                }
-                return existing.getFirst().get(Tables.ASSET.ID);
+                tasksEmptyTimes = 0;
             }
         }
 
-        @Override
-        public String saveAccount(String id, String name, String url, Long avatarId) {
-            Result<Record> existing = jooq.select().from(Tables.ACCOUNT)
-                    .where(Tables.ACCOUNT.ID.eq(id))
-                    .fetch();
+        log.info("Download finished");
+        executor.shutdown();
+    }
 
-            if (existing.isEmpty()) {
-                try {
-                    jooq.insertInto(Tables.ACCOUNT)
-                            .set(Tables.ACCOUNT.ID, id)
-                            .set(Tables.ACCOUNT.USERNAME, name)
-                            .set(Tables.ACCOUNT.URL, url)
-                            .set(Tables.ACCOUNT.AVATAR, avatarId)
-                            .execute();
-                } catch (IntegrityConstraintViolationException e) {
-                    jooq.update(Tables.ACCOUNT)
-                            .set(Tables.ACCOUNT.USERNAME, name)
-                            .set(Tables.ACCOUNT.URL, url)
-                            .set(Tables.ACCOUNT.AVATAR, avatarId)
-                            .where(Tables.ACCOUNT.ID.eq(id))
-                            .execute();
-                    }
-            } else {
-                jooq.update(Tables.ACCOUNT)
-                        .set(Tables.ACCOUNT.USERNAME, name)
-                        .set(Tables.ACCOUNT.URL, url)
-                        .set(Tables.ACCOUNT.AVATAR, avatarId)
-                        .where(Tables.ACCOUNT.ID.eq(id))
-                        .execute();
-            }
+    @ShellMethod(value = "Clear download queue", key = "clear-download-queue")
+    public void clearDownloadQueue() throws IOException {
+        jooq.deleteFrom(Tables.DOWNLOAD_QUEUE).execute();
+    }
 
-            return id;
-        }
+    @ShellMethod(value = "Clear all", key = "clear-all")
+    public void clearEverything() throws IOException {
+        jooq.truncate(Tables.DOWNLOAD_QUEUE_SCHEDULED).cascade().execute();
+        jooq.truncate(Tables.DOWNLOAD_QUEUE_DONE).cascade().execute();
+        jooq.truncate(Tables.DOWNLOAD_QUEUE_FAILURE).cascade().execute();
+        jooq.truncate(Tables.DOWNLOAD_QUEUE).cascade().execute();
+        jooq.truncate(Tables.POST_FULLTEXT).cascade().execute();
+        jooq.truncate(Tables.POST_ATTACHMENT).cascade().execute();
+        jooq.truncate(Tables.POST).cascade().execute();
+        jooq.truncate(Tables.TOPIC).cascade().execute();
+        jooq.truncate(Tables.BOARD).cascade().execute();
+        jooq.truncate(Tables.ACCOUNT).cascade().execute();
+        jooq.truncate(Tables.ASSET).cascade().execute();
+    }
 
-        @Override
-        public String saveCategory(String id, String name, String url, String description, String parentId) {
-            Result<Record> existing = jooq.select().from(Tables.CATEGORY)
-                    .where(Tables.CATEGORY.ID.eq(id))
-                    .fetch();
+    public void addTask(DownloadQueue.TaskType type, PageInfo.Uri pageInfo, Long entityId) {
+        queue.enqueue(type, pageInfo, entityId);
+    }
 
-            if (existing.isEmpty()) {
-                try {
-                    jooq.insertInto(Tables.CATEGORY)
-                            .set(Tables.CATEGORY.ID, id)
-                            .set(Tables.CATEGORY.NAME, name)
-                            .set(Tables.CATEGORY.URL, url)
-                            .set(Tables.CATEGORY.DESCRIPTION, description)
-                            .set(Tables.CATEGORY.PARENT, parentId)
-                            .execute();
-                } catch (IntegrityConstraintViolationException e) {
-                    jooq.update(Tables.CATEGORY)
-                            .set(Tables.CATEGORY.NAME, name)
-                            .set(Tables.CATEGORY.URL, url)
-                            .set(Tables.CATEGORY.DESCRIPTION, description)
-                            .set(Tables.CATEGORY.PARENT, parentId)
-                            .where(Tables.CATEGORY.ID.eq(id))
-                            .execute();
+    private TaskResult processTask(DownloadQueue.Task task) {
+        log.info("Processing task: {}", task);
+        try {
+            switch (task.type()) {
+                case BOARD -> {
+                    PageInfo pageInfo = new PageInfo.Uri(URI.create(task.url()));
+                    Document document = getDocument(task.url());
+                    boardPageProcessor.process(pageInfo, document, boardPageProcessor);
                 }
-            } else {
-                jooq.update(Tables.CATEGORY)
-                        .set(Tables.CATEGORY.NAME, name)
-                        .set(Tables.CATEGORY.URL, url)
-                        .set(Tables.CATEGORY.DESCRIPTION, description)
-                        .set(Tables.CATEGORY.PARENT, parentId)
-                        .where(Tables.CATEGORY.ID.eq(id))
-                        .execute();
-            }
-
-            return id;
-        }
-
-        @Override
-        public String saveThread(String id, String title, String url, String authorId, String categoryId, Instant createdAt) {
-            Result<Record> existing = jooq.select().from(Tables.THREAD)
-                    .where(Tables.THREAD.ID.eq(id))
-                    .fetch();
-
-            ZonedDateTime createdAtZoned = ZonedDateTime.ofInstant(createdAt != null ? createdAt : Instant.EPOCH, java.time.ZoneId.of("Europe/Warsaw"));
-            if (existing.isEmpty()) {
-                try {
-                    jooq.insertInto(Tables.THREAD)
-                            .set(Tables.THREAD.ID, id)
-                            .set(Tables.THREAD.TITLE, title)
-                            .set(Tables.THREAD.URL, url)
-                            .set(Tables.THREAD.AUTHOR, authorId)
-                            .set(Tables.THREAD.CATEGORY, categoryId)
-                            .set(Tables.THREAD.CREATED_AT, OffsetDateTime.from(createdAtZoned))
-                            .execute();
-                } catch (IntegrityConstraintViolationException e) {
-                    jooq.update(Tables.THREAD)
-                            .set(Tables.THREAD.TITLE, title)
-                            .set(Tables.THREAD.URL, url)
-                            .set(Tables.THREAD.AUTHOR, authorId)
-                            .set(Tables.THREAD.CATEGORY, categoryId)
-                            .set(Tables.THREAD.CREATED_AT, OffsetDateTime.from(createdAtZoned))
-                            .where(Tables.THREAD.ID.eq(id))
-                            .execute();
+                case TOPIC -> {
+                    PageInfo pageInfo = new PageInfo.Uri(URI.create(task.url()));
+                    Document document = getDocument(task.url());
+                    topicPageProcessor.process(pageInfo, document, topicPageProcessor);
                 }
-            } else {
-                jooq.update(Tables.THREAD)
-                        .set(Tables.THREAD.TITLE, title)
-                        .set(Tables.THREAD.URL, url)
-                        .set(Tables.THREAD.AUTHOR, authorId)
-                        .set(Tables.THREAD.CATEGORY, categoryId)
-                        .set(Tables.THREAD.CREATED_AT, OffsetDateTime.from(createdAtZoned))
-                        .where(Tables.THREAD.ID.eq(id))
-                        .execute();
-            }
-
-            return id;
-        }
-
-        @Override
-        public String updateThread(String id, String title, String authorId, Instant createdAt) {
-            jooq.update(Tables.THREAD)
-                    .set(Tables.THREAD.TITLE, title)
-                    .set(Tables.THREAD.AUTHOR, authorId)
-                    .set(Tables.THREAD.CREATED_AT, OffsetDateTime.from(
-                            ZonedDateTime.ofInstant(createdAt != null ? createdAt : Instant.EPOCH, java.time.ZoneId.of("Europe/Warsaw"))
-                    ))
-                    .where(Tables.THREAD.ID.eq(id))
-                    .execute();
-
-            return id;
-        }
-
-        @Override
-        public String savePost(String id, String content, String url, String authorId, String threadId, Instant createdAt) {
-            Result<Record> existing = jooq.select().from(Tables.POST)
-                    .where(Tables.POST.ID.eq(id))
-                    .fetch();
-
-            ZonedDateTime createdAtZoned = ZonedDateTime.ofInstant(createdAt != null ? createdAt : Instant.EPOCH, java.time.ZoneId.of("Europe/Warsaw"));
-            if (existing.isEmpty()) {
-                try {
-                    jooq.insertInto(Tables.POST)
-                            .set(Tables.POST.ID, id)
-                            .set(Tables.POST.CONTENT, content)
-                            .set(Tables.POST.URL, url)
-                            .set(Tables.POST.AUTHOR, authorId)
-                            .set(Tables.POST.THREAD, threadId)
-                            .set(Tables.POST.CREATED_AT, OffsetDateTime.from(createdAtZoned))
-                            .execute();
-                } catch (IntegrityConstraintViolationException e) {
-                    jooq.update(Tables.POST)
-                            .set(Tables.POST.CONTENT, content)
-                            .set(Tables.POST.URL, url)
-                            .set(Tables.POST.AUTHOR, authorId)
-                            .set(Tables.POST.THREAD, threadId)
-                            .set(Tables.POST.CREATED_AT, OffsetDateTime.from(createdAtZoned))
-                            .where(Tables.POST.ID.eq(id))
-                            .execute();
-                }
-            } else {
-                jooq.update(Tables.POST)
-                        .set(Tables.POST.CONTENT, content)
-                        .set(Tables.POST.URL, url)
-                        .set(Tables.POST.AUTHOR, authorId)
-                        .set(Tables.POST.THREAD, threadId)
-                        .set(Tables.POST.CREATED_AT, OffsetDateTime.from(createdAtZoned))
-                        .where(Tables.POST.ID.eq(id))
-                        .execute();
-            }
-
-            return id;
-        }
-
-        @Override
-        public boolean hasCategory(String boardId) {
-            return jooq.select().from(Tables.CATEGORY)
-                    .where(Tables.CATEGORY.ID.eq(boardId))
-                    .fetchOptional()
-                    .isPresent();
-        }
-
-        @Override
-        public boolean hasThread(String id) {
-            return jooq.select().from(Tables.THREAD)
-                    .where(Tables.THREAD.ID.eq(id))
-                    .fetchOptional()
-                    .isPresent();
-        }
-
-        @Override
-        public void enqueueDownload(String url, String type, String id) {
-            enqueueDownload(url, type, id, false);
-        }
-
-        @Override
-        public void enqueueDownload(String url, String type, String id, boolean force) {
-            if (config.get(CONFIG_SKIP_VISITED).equals("true")) {
-                Set<String> visited = jooq.select(Tables.VISITED_URL.URL)
-                        .from(Tables.VISITED_URL)
-                        .fetchSet(Tables.VISITED_URL.URL);
-
-                if (visited.contains(url) && !force) {
-                    log.info("Skipping visited {}", url);
-                    return;
-                }
-
-                if (visited.contains(url)) {
-                    log.info("Forcing download of visited {}", url);
-                }
-            }
-
-            jobCounter.incrementAndGet();
-            executor.submit(() -> {
-                try {
-                    adapter.download(url, type, id, this, config);
-                } catch (Exception e) {
-                    log.error("Error downloading {}. {}: {}", url, e.getClass().getCanonicalName(), e.getMessage());
+                case ASSET -> {
                     try {
-                        Thread.currentThread().join(1);
-                    } catch (InterruptedException ex) {
-                        // Ignore
+                        HttpResponse<byte[]> file = getFile(task.url());
+                        Asset asset = Asset.dao().get(task.entityId());
+                        String mimeType = file.headers().firstValue("Content-Type").orElse("application/octet-stream");
+                        String extension = Arrays.stream(mimeType.split("/")).max(Comparator.naturalOrder()).orElse(".bin");
+                        String filename = asset.path() + "." + extension;
+                        Path path = Path.of(assetsDirectory.toString(), filename);
+                        Files.createDirectories(path.getParent());
+                        Files.write(path, file.body());
+                        asset.withDownloadInfo(mimeType, filename, (long) file.body().length).save();
+                    } catch (Exception e) {
+                        log.error("Couldn't download asset from {}", task.url());
                     }
-                } finally {
-                    jobCounter.getAndDecrement();
-                    if (config.get(CONFIG_SAVE_VISITED).equals("true")) {
-                        boolean exists = jooq.select().from(Tables.VISITED_URL).where(Tables.VISITED_URL.URL.eq(url)).fetchOptional().isPresent();
-                        if (exists) {
-                            jooq.update(Tables.VISITED_URL)
-                                    .set(Tables.VISITED_URL.VISITED_AT, OffsetDateTime.now())
-                                    .where(Tables.VISITED_URL.URL.eq(url))
-                                    .execute();
-                        } else {
-                            jooq.insertInto(Tables.VISITED_URL)
-                                    .set(Tables.VISITED_URL.URL, url)
-                                    .set(Tables.VISITED_URL.VISITED_AT, OffsetDateTime.now())
-                                    .execute();
-                        }
-                    }
+                }
+                default -> throw new IllegalArgumentException("Unsupported task type: " + task.type());
+            }
+            DownloadQueue.TaskDone taskDone = task.done();
+            log.info("Task done: {}", task);
+            return new TaskResult.Done(taskDone);
+        } catch (Exception e) {
+            log.error("Error processing task: {}", task, e);
+            return new TaskResult.Failure(task.failure(e.getClass().getName(), e.getMessage()));
+        }
+    }
+
+    private Document getDocument(String url) throws IOException {
+        Retryer<Document> retryer = RetryerBuilder.<Document>newBuilder()
+                .retryIfExceptionOfType(IOException.class)
+                .retryIfRuntimeException()
+                .withWaitStrategy(WaitStrategies.randomWait(1, TimeUnit.SECONDS, 10, TimeUnit.SECONDS))
+                .withStopStrategy(StopStrategies.stopAfterDelay(1, TimeUnit.MINUTES))
+                .build();
+        try {
+            return retryer.call(() -> {
+                httpRateLimiter.acquire();
+                return Jsoup.connect(url).get();
+            });
+        } catch (ExecutionException | RetryException e) {
+            log.error("Error fetching document: {}", url, e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    private HttpResponse<byte[]> getFile(String url) throws IOException {
+        Retryer<HttpResponse<byte[]>> retryer = RetryerBuilder.<HttpResponse<byte[]>>newBuilder()
+                .retryIfExceptionOfType(IOException.class)
+                .retryIfRuntimeException()
+                .withWaitStrategy(WaitStrategies.randomWait(1, TimeUnit.SECONDS, 10, TimeUnit.SECONDS))
+                .withStopStrategy(StopStrategies.stopAfterDelay(10, TimeUnit.SECONDS))
+                .retryIfResult(r -> r.statusCode() < 200 || r.statusCode() > 399)
+                .build();
+        try {
+            return retryer.call(() -> {
+                try (HttpClient client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()) {
+                    HttpRequest request = HttpRequest.newBuilder(URI.create(url)).build();
+                    return client.send(request, HttpResponse.BodyHandlers.ofByteArray());
                 }
             });
+        } catch (ExecutionException | RetryException e) {
+            throw new RuntimeException(e);
         }
+    }
 
-        private void downloadAsset(Long id, String url) {
-            if (downloadedAssets.contains(url)) {
-                return;
-            }
+    sealed interface TaskResult {
+        record Done(DownloadQueue.TaskDone task) implements TaskResult {}
 
-            jobCounter.incrementAndGet();
-            executor.submit(() -> {
-                log.info("Downloading asset {}", url);
-                downloadedAssets.add(url);
-                try (HttpClient httpClient = HttpClient.newHttpClient()) {
-                    HttpRequest request = HttpRequest.newBuilder().GET().uri(URI.create(url)).build();
-                    HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-                    if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                        if (config.get(CONFIG_ASSET_DATABASE).equals("true")) {
-                            jooq.update(Tables.ASSET)
-                                    .set(Tables.ASSET.DATA, response.body())
-                                    .where(Tables.ASSET.ID.eq(id))
-                                    .execute();
-                        }
-
-                        if (config.get(CONFIG_ASSET_FILESYSTEM).equals("true")) {
-                            String name = jooq.select().from(Tables.ASSET)
-                                    .where(Tables.ASSET.ID.eq(id))
-                                    .fetch()
-                                    .getValue(0, Tables.ASSET.NAME);
-                            String contentType = response.headers().firstValue("Content-Type").orElse("application/octet-stream");
-                            String extension = contentType.split("/")[1].replaceAll("\\+.*$", "");
-                            String nameHash = DigestUtils.md5DigestAsHex(name.getBytes(StandardCharsets.UTF_8));
-                            Files.write(
-                                    Path.of(config.get(CONFIG_ASSET_FILESYSTEM_DIR), nameHash + "." + extension),
-                                    response.body()
-                            );
-                        }
-
-                        log.info("Downloaded asset {}", url);
-                    } else {
-                        log.error("Failed to download asset {}. Status code: {}", url, response.statusCode());
-                    }
-                } catch (Exception e) {
-                    log.error("Error downloading asset {}. {}: {}", url, e.getClass().getCanonicalName(), e.getMessage());
-                    try {
-                        Thread.currentThread().join(1);
-                    } catch (InterruptedException ex) {
-                        // Ignore
-                    }
-                } finally {
-                    jobCounter.decrementAndGet();
-                }
-            });
-        }
+        record Failure(DownloadQueue.TaskFailure task) implements TaskResult {}
     }
 }

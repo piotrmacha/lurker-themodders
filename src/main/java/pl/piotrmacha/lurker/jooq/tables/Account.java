@@ -4,6 +4,7 @@
 package pl.piotrmacha.lurker.jooq.tables;
 
 
+import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
@@ -11,6 +12,8 @@ import java.util.List;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
+import org.jooq.Identity;
+import org.jooq.Index;
 import org.jooq.InverseForeignKey;
 import org.jooq.Name;
 import org.jooq.Path;
@@ -29,11 +32,13 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
+import pl.piotrmacha.lurker.jooq.Indexes;
 import pl.piotrmacha.lurker.jooq.Keys;
 import pl.piotrmacha.lurker.jooq.Public;
 import pl.piotrmacha.lurker.jooq.tables.Asset.AssetPath;
 import pl.piotrmacha.lurker.jooq.tables.Post.PostPath;
-import pl.piotrmacha.lurker.jooq.tables.Thread.ThreadPath;
+import pl.piotrmacha.lurker.jooq.tables.PostFulltext.PostFulltextPath;
+import pl.piotrmacha.lurker.jooq.tables.Topic.TopicPath;
 import pl.piotrmacha.lurker.jooq.tables.records.AccountRecord;
 
 
@@ -61,12 +66,12 @@ public class Account extends TableImpl<AccountRecord> {
     /**
      * The column <code>public.account.id</code>.
      */
-    public final TableField<AccountRecord, String> ID = createField(DSL.name("id"), SQLDataType.CLOB.nullable(false), this, "");
+    public final TableField<AccountRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).identity(true), this, "");
 
     /**
-     * The column <code>public.account.username</code>.
+     * The column <code>public.account.oid</code>.
      */
-    public final TableField<AccountRecord, String> USERNAME = createField(DSL.name("username"), SQLDataType.CLOB.nullable(false), this, "");
+    public final TableField<AccountRecord, String> OID = createField(DSL.name("oid"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
      * The column <code>public.account.url</code>.
@@ -74,9 +79,19 @@ public class Account extends TableImpl<AccountRecord> {
     public final TableField<AccountRecord, String> URL = createField(DSL.name("url"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
-     * The column <code>public.account.avatar</code>.
+     * The column <code>public.account.username</code>.
      */
-    public final TableField<AccountRecord, Long> AVATAR = createField(DSL.name("avatar"), SQLDataType.BIGINT, this, "");
+    public final TableField<AccountRecord, String> USERNAME = createField(DSL.name("username"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.account.avatar_id</code>.
+     */
+    public final TableField<AccountRecord, Long> AVATAR_ID = createField(DSL.name("avatar_id"), SQLDataType.BIGINT, this, "");
+
+    /**
+     * The column <code>public.account.last_update</code>.
+     */
+    public final TableField<AccountRecord, OffsetDateTime> LAST_UPDATE = createField(DSL.name("last_update"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("now()"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
 
     private Account(Name alias, Table<AccountRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -146,13 +161,23 @@ public class Account extends TableImpl<AccountRecord> {
     }
 
     @Override
+    public List<Index> getIndexes() {
+        return Arrays.asList(Indexes.ACCOUNT_OID_IDX);
+    }
+
+    @Override
+    public Identity<AccountRecord, Long> getIdentity() {
+        return (Identity<AccountRecord, Long>) super.getIdentity();
+    }
+
+    @Override
     public UniqueKey<AccountRecord> getPrimaryKey() {
         return Keys.ACCOUNT_PKEY;
     }
 
     @Override
     public List<ForeignKey<AccountRecord, ?>> getReferences() {
-        return Arrays.asList(Keys.ACCOUNT__ACCOUNT_AVATAR_FKEY);
+        return Arrays.asList(Keys.ACCOUNT__ACCOUNT_AVATAR_ID_FKEY);
     }
 
     private transient AssetPath _asset;
@@ -162,7 +187,7 @@ public class Account extends TableImpl<AccountRecord> {
      */
     public AssetPath asset() {
         if (_asset == null)
-            _asset = new AssetPath(this, Keys.ACCOUNT__ACCOUNT_AVATAR_FKEY, null);
+            _asset = new AssetPath(this, Keys.ACCOUNT__ACCOUNT_AVATAR_ID_FKEY, null);
 
         return _asset;
     }
@@ -174,22 +199,34 @@ public class Account extends TableImpl<AccountRecord> {
      */
     public PostPath post() {
         if (_post == null)
-            _post = new PostPath(this, null, Keys.POST__POST_AUTHOR_FKEY.getInverseKey());
+            _post = new PostPath(this, null, Keys.POST__POST_AUTHOR_ID_FKEY.getInverseKey());
 
         return _post;
     }
 
-    private transient ThreadPath _thread;
+    private transient PostFulltextPath _postFulltext;
 
     /**
-     * Get the implicit to-many join path to the <code>public.thread</code>
-     * table
+     * Get the implicit to-many join path to the
+     * <code>public.post_fulltext</code> table
      */
-    public ThreadPath thread() {
-        if (_thread == null)
-            _thread = new ThreadPath(this, null, Keys.THREAD__THREAD_AUTHOR_FKEY.getInverseKey());
+    public PostFulltextPath postFulltext() {
+        if (_postFulltext == null)
+            _postFulltext = new PostFulltextPath(this, null, Keys.POST_FULLTEXT__POST_FULLTEXT_AUTHOR_ID_FKEY.getInverseKey());
 
-        return _thread;
+        return _postFulltext;
+    }
+
+    private transient TopicPath _topic;
+
+    /**
+     * Get the implicit to-many join path to the <code>public.topic</code> table
+     */
+    public TopicPath topic() {
+        if (_topic == null)
+            _topic = new TopicPath(this, null, Keys.TOPIC__TOPIC_AUTHOR_ID_FKEY.getInverseKey());
+
+        return _topic;
     }
 
     @Override

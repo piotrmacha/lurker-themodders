@@ -8,17 +8,21 @@ import java.util.Arrays;
 import java.util.List;
 
 import org.jooq.Catalog;
-import org.jooq.Sequence;
 import org.jooq.Table;
 import org.jooq.impl.SchemaImpl;
 
 import pl.piotrmacha.lurker.jooq.tables.Account;
 import pl.piotrmacha.lurker.jooq.tables.Asset;
-import pl.piotrmacha.lurker.jooq.tables.Category;
+import pl.piotrmacha.lurker.jooq.tables.Board;
+import pl.piotrmacha.lurker.jooq.tables.DownloadQueue;
+import pl.piotrmacha.lurker.jooq.tables.DownloadQueueDone;
+import pl.piotrmacha.lurker.jooq.tables.DownloadQueueFailure;
+import pl.piotrmacha.lurker.jooq.tables.DownloadQueueScheduled;
 import pl.piotrmacha.lurker.jooq.tables.FlywaySchemaHistory;
 import pl.piotrmacha.lurker.jooq.tables.Post;
-import pl.piotrmacha.lurker.jooq.tables.Thread;
-import pl.piotrmacha.lurker.jooq.tables.VisitedUrl;
+import pl.piotrmacha.lurker.jooq.tables.PostAttachment;
+import pl.piotrmacha.lurker.jooq.tables.PostFulltext;
+import pl.piotrmacha.lurker.jooq.tables.Topic;
 
 
 /**
@@ -45,9 +49,29 @@ public class Public extends SchemaImpl {
     public final Asset ASSET = Asset.ASSET;
 
     /**
-     * The table <code>public.category</code>.
+     * The table <code>public.board</code>.
      */
-    public final Category CATEGORY = Category.CATEGORY;
+    public final Board BOARD = Board.BOARD;
+
+    /**
+     * The table <code>public.download_queue</code>.
+     */
+    public final DownloadQueue DOWNLOAD_QUEUE = DownloadQueue.DOWNLOAD_QUEUE;
+
+    /**
+     * The table <code>public.download_queue_done</code>.
+     */
+    public final DownloadQueueDone DOWNLOAD_QUEUE_DONE = DownloadQueueDone.DOWNLOAD_QUEUE_DONE;
+
+    /**
+     * The table <code>public.download_queue_failure</code>.
+     */
+    public final DownloadQueueFailure DOWNLOAD_QUEUE_FAILURE = DownloadQueueFailure.DOWNLOAD_QUEUE_FAILURE;
+
+    /**
+     * The table <code>public.download_queue_scheduled</code>.
+     */
+    public final DownloadQueueScheduled DOWNLOAD_QUEUE_SCHEDULED = DownloadQueueScheduled.DOWNLOAD_QUEUE_SCHEDULED;
 
     /**
      * The table <code>public.flyway_schema_history</code>.
@@ -60,14 +84,19 @@ public class Public extends SchemaImpl {
     public final Post POST = Post.POST;
 
     /**
-     * The table <code>public.thread</code>.
+     * The table <code>public.post_attachment</code>.
      */
-    public final Thread THREAD = Thread.THREAD;
+    public final PostAttachment POST_ATTACHMENT = PostAttachment.POST_ATTACHMENT;
 
     /**
-     * The table <code>public.visited_url</code>.
+     * The table <code>public.post_fulltext</code>.
      */
-    public final VisitedUrl VISITED_URL = VisitedUrl.VISITED_URL;
+    public final PostFulltext POST_FULLTEXT = PostFulltext.POST_FULLTEXT;
+
+    /**
+     * The table <code>public.topic</code>.
+     */
+    public final Topic TOPIC = Topic.TOPIC;
 
     /**
      * No further instances allowed
@@ -83,22 +112,20 @@ public class Public extends SchemaImpl {
     }
 
     @Override
-    public final List<Sequence<?>> getSequences() {
-        return Arrays.asList(
-            Sequences.ASSET_ID_SEQ
-        );
-    }
-
-    @Override
     public final List<Table<?>> getTables() {
         return Arrays.asList(
             Account.ACCOUNT,
             Asset.ASSET,
-            Category.CATEGORY,
+            Board.BOARD,
+            DownloadQueue.DOWNLOAD_QUEUE,
+            DownloadQueueDone.DOWNLOAD_QUEUE_DONE,
+            DownloadQueueFailure.DOWNLOAD_QUEUE_FAILURE,
+            DownloadQueueScheduled.DOWNLOAD_QUEUE_SCHEDULED,
             FlywaySchemaHistory.FLYWAY_SCHEMA_HISTORY,
             Post.POST,
-            Thread.THREAD,
-            VisitedUrl.VISITED_URL
+            PostAttachment.POST_ATTACHMENT,
+            PostFulltext.POST_FULLTEXT,
+            Topic.TOPIC
         );
     }
 }

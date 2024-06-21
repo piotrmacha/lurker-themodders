@@ -4,6 +4,8 @@
 package pl.piotrmacha.lurker.jooq.tables.records;
 
 
+import java.time.OffsetDateTime;
+
 import org.jooq.Record1;
 import org.jooq.impl.UpdatableRecordImpl;
 
@@ -61,17 +63,59 @@ public class AssetRecord extends UpdatableRecordImpl<AssetRecord> {
     }
 
     /**
-     * Setter for <code>public.asset.data</code>.
+     * Setter for <code>public.asset.path</code>.
      */
-    public void setData(byte[] value) {
+    public void setPath(String value) {
         set(3, value);
     }
 
     /**
-     * Getter for <code>public.asset.data</code>.
+     * Getter for <code>public.asset.path</code>.
      */
-    public byte[] getData() {
-        return (byte[]) get(3);
+    public String getPath() {
+        return (String) get(3);
+    }
+
+    /**
+     * Setter for <code>public.asset.mime_type</code>.
+     */
+    public void setMimeType(String value) {
+        set(4, value);
+    }
+
+    /**
+     * Getter for <code>public.asset.mime_type</code>.
+     */
+    public String getMimeType() {
+        return (String) get(4);
+    }
+
+    /**
+     * Setter for <code>public.asset.size</code>.
+     */
+    public void setSize(Long value) {
+        set(5, value);
+    }
+
+    /**
+     * Getter for <code>public.asset.size</code>.
+     */
+    public Long getSize() {
+        return (Long) get(5);
+    }
+
+    /**
+     * Setter for <code>public.asset.last_update</code>.
+     */
+    public void setLastUpdate(OffsetDateTime value) {
+        set(6, value);
+    }
+
+    /**
+     * Getter for <code>public.asset.last_update</code>.
+     */
+    public OffsetDateTime getLastUpdate() {
+        return (OffsetDateTime) get(6);
     }
 
     // -------------------------------------------------------------------------
@@ -97,13 +141,16 @@ public class AssetRecord extends UpdatableRecordImpl<AssetRecord> {
     /**
      * Create a detached, initialised AssetRecord
      */
-    public AssetRecord(Long id, String name, String url, byte[] data) {
+    public AssetRecord(Long id, String name, String url, String path, String mimeType, Long size, OffsetDateTime lastUpdate) {
         super(Asset.ASSET);
 
         setId(id);
         setName(name);
         setUrl(url);
-        setData(data);
+        setPath(path);
+        setMimeType(mimeType);
+        setSize(size);
+        setLastUpdate(lastUpdate);
         resetChangedOnNotNull();
     }
 }

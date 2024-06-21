@@ -4,11 +4,16 @@
 package pl.piotrmacha.lurker.jooq.tables;
 
 
+import java.time.OffsetDateTime;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
+import org.jooq.Identity;
+import org.jooq.Index;
 import org.jooq.InverseForeignKey;
 import org.jooq.Name;
 import org.jooq.Path;
@@ -27,9 +32,12 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
+import pl.piotrmacha.lurker.jooq.Indexes;
 import pl.piotrmacha.lurker.jooq.Keys;
 import pl.piotrmacha.lurker.jooq.Public;
 import pl.piotrmacha.lurker.jooq.tables.Account.AccountPath;
+import pl.piotrmacha.lurker.jooq.tables.Post.PostPath;
+import pl.piotrmacha.lurker.jooq.tables.PostAttachment.PostAttachmentPath;
 import pl.piotrmacha.lurker.jooq.tables.records.AssetRecord;
 
 
@@ -57,7 +65,7 @@ public class Asset extends TableImpl<AssetRecord> {
     /**
      * The column <code>public.asset.id</code>.
      */
-    public final TableField<AssetRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false), this, "");
+    public final TableField<AssetRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).identity(true), this, "");
 
     /**
      * The column <code>public.asset.name</code>.
@@ -70,9 +78,24 @@ public class Asset extends TableImpl<AssetRecord> {
     public final TableField<AssetRecord, String> URL = createField(DSL.name("url"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
-     * The column <code>public.asset.data</code>.
+     * The column <code>public.asset.path</code>.
      */
-    public final TableField<AssetRecord, byte[]> DATA = createField(DSL.name("data"), SQLDataType.BLOB, this, "");
+    public final TableField<AssetRecord, String> PATH = createField(DSL.name("path"), SQLDataType.CLOB.nullable(false), this, "");
+
+    /**
+     * The column <code>public.asset.mime_type</code>.
+     */
+    public final TableField<AssetRecord, String> MIME_TYPE = createField(DSL.name("mime_type"), SQLDataType.CLOB.defaultValue(DSL.field(DSL.raw("'application/octet-stream'::text"), SQLDataType.CLOB)), this, "");
+
+    /**
+     * The column <code>public.asset.size</code>.
+     */
+    public final TableField<AssetRecord, Long> SIZE = createField(DSL.name("size"), SQLDataType.BIGINT.defaultValue(DSL.field(DSL.raw("0"), SQLDataType.BIGINT)), this, "");
+
+    /**
+     * The column <code>public.asset.last_update</code>.
+     */
+    public final TableField<AssetRecord, OffsetDateTime> LAST_UPDATE = createField(DSL.name("last_update"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("now()"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
 
     private Asset(Name alias, Table<AssetRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -142,6 +165,16 @@ public class Asset extends TableImpl<AssetRecord> {
     }
 
     @Override
+    public List<Index> getIndexes() {
+        return Arrays.asList(Indexes.ASSET_URL_IDX);
+    }
+
+    @Override
+    public Identity<AssetRecord, Long> getIdentity() {
+        return (Identity<AssetRecord, Long>) super.getIdentity();
+    }
+
+    @Override
     public UniqueKey<AssetRecord> getPrimaryKey() {
         return Keys.ASSET_PKEY;
     }
@@ -154,9 +187,30 @@ public class Asset extends TableImpl<AssetRecord> {
      */
     public AccountPath account() {
         if (_account == null)
-            _account = new AccountPath(this, null, Keys.ACCOUNT__ACCOUNT_AVATAR_FKEY.getInverseKey());
+            _account = new AccountPath(this, null, Keys.ACCOUNT__ACCOUNT_AVATAR_ID_FKEY.getInverseKey());
 
         return _account;
+    }
+
+    private transient PostAttachmentPath _postAttachment;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.post_attachment</code> table
+     */
+    public PostAttachmentPath postAttachment() {
+        if (_postAttachment == null)
+            _postAttachment = new PostAttachmentPath(this, null, Keys.POST_ATTACHMENT__POST_ATTACHMENT_ASSET_ID_FKEY.getInverseKey());
+
+        return _postAttachment;
+    }
+
+    /**
+     * Get the implicit many-to-many join path to the <code>public.post</code>
+     * table
+     */
+    public PostPath post() {
+        return postAttachment().post();
     }
 
     @Override

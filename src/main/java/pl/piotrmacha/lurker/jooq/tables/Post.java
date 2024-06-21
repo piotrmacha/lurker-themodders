@@ -12,6 +12,8 @@ import java.util.List;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
+import org.jooq.Identity;
+import org.jooq.Index;
 import org.jooq.InverseForeignKey;
 import org.jooq.Name;
 import org.jooq.Path;
@@ -30,10 +32,14 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
+import pl.piotrmacha.lurker.jooq.Indexes;
 import pl.piotrmacha.lurker.jooq.Keys;
 import pl.piotrmacha.lurker.jooq.Public;
 import pl.piotrmacha.lurker.jooq.tables.Account.AccountPath;
-import pl.piotrmacha.lurker.jooq.tables.Thread.ThreadPath;
+import pl.piotrmacha.lurker.jooq.tables.Asset.AssetPath;
+import pl.piotrmacha.lurker.jooq.tables.PostAttachment.PostAttachmentPath;
+import pl.piotrmacha.lurker.jooq.tables.PostFulltext.PostFulltextPath;
+import pl.piotrmacha.lurker.jooq.tables.Topic.TopicPath;
 import pl.piotrmacha.lurker.jooq.tables.records.PostRecord;
 
 
@@ -61,22 +67,12 @@ public class Post extends TableImpl<PostRecord> {
     /**
      * The column <code>public.post.id</code>.
      */
-    public final TableField<PostRecord, String> ID = createField(DSL.name("id"), SQLDataType.CLOB.nullable(false), this, "");
+    public final TableField<PostRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).identity(true), this, "");
 
     /**
-     * The column <code>public.post.author</code>.
+     * The column <code>public.post.oid</code>.
      */
-    public final TableField<PostRecord, String> AUTHOR = createField(DSL.name("author"), SQLDataType.CLOB, this, "");
-
-    /**
-     * The column <code>public.post.thread</code>.
-     */
-    public final TableField<PostRecord, String> THREAD = createField(DSL.name("thread"), SQLDataType.CLOB, this, "");
-
-    /**
-     * The column <code>public.post.content</code>.
-     */
-    public final TableField<PostRecord, String> CONTENT = createField(DSL.name("content"), SQLDataType.CLOB.nullable(false), this, "");
+    public final TableField<PostRecord, String> OID = createField(DSL.name("oid"), SQLDataType.CLOB, this, "");
 
     /**
      * The column <code>public.post.url</code>.
@@ -84,9 +80,29 @@ public class Post extends TableImpl<PostRecord> {
     public final TableField<PostRecord, String> URL = createField(DSL.name("url"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
+     * The column <code>public.post.author_id</code>.
+     */
+    public final TableField<PostRecord, Long> AUTHOR_ID = createField(DSL.name("author_id"), SQLDataType.BIGINT, this, "");
+
+    /**
+     * The column <code>public.post.topic_id</code>.
+     */
+    public final TableField<PostRecord, Long> TOPIC_ID = createField(DSL.name("topic_id"), SQLDataType.BIGINT, this, "");
+
+    /**
+     * The column <code>public.post.content</code>.
+     */
+    public final TableField<PostRecord, String> CONTENT = createField(DSL.name("content"), SQLDataType.CLOB.nullable(false), this, "");
+
+    /**
      * The column <code>public.post.created_at</code>.
      */
-    public final TableField<PostRecord, OffsetDateTime> CREATED_AT = createField(DSL.name("created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false), this, "");
+    public final TableField<PostRecord, OffsetDateTime> CREATED_AT = createField(DSL.name("created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
+
+    /**
+     * The column <code>public.post.last_update</code>.
+     */
+    public final TableField<PostRecord, OffsetDateTime> LAST_UPDATE = createField(DSL.name("last_update"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("now()"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
 
     private Post(Name alias, Table<PostRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -156,13 +172,23 @@ public class Post extends TableImpl<PostRecord> {
     }
 
     @Override
+    public List<Index> getIndexes() {
+        return Arrays.asList(Indexes.POST_OID_IDX);
+    }
+
+    @Override
+    public Identity<PostRecord, Long> getIdentity() {
+        return (Identity<PostRecord, Long>) super.getIdentity();
+    }
+
+    @Override
     public UniqueKey<PostRecord> getPrimaryKey() {
         return Keys.POST_PKEY;
     }
 
     @Override
     public List<ForeignKey<PostRecord, ?>> getReferences() {
-        return Arrays.asList(Keys.POST__POST_AUTHOR_FKEY, Keys.POST__POST_THREAD_FKEY);
+        return Arrays.asList(Keys.POST__POST_AUTHOR_ID_FKEY, Keys.POST__POST_TOPIC_ID_FKEY);
     }
 
     private transient AccountPath _account;
@@ -172,21 +198,55 @@ public class Post extends TableImpl<PostRecord> {
      */
     public AccountPath account() {
         if (_account == null)
-            _account = new AccountPath(this, Keys.POST__POST_AUTHOR_FKEY, null);
+            _account = new AccountPath(this, Keys.POST__POST_AUTHOR_ID_FKEY, null);
 
         return _account;
     }
 
-    private transient ThreadPath _thread;
+    private transient TopicPath _topic;
 
     /**
-     * Get the implicit join path to the <code>public.thread</code> table.
+     * Get the implicit join path to the <code>public.topic</code> table.
      */
-    public ThreadPath thread() {
-        if (_thread == null)
-            _thread = new ThreadPath(this, Keys.POST__POST_THREAD_FKEY, null);
+    public TopicPath topic() {
+        if (_topic == null)
+            _topic = new TopicPath(this, Keys.POST__POST_TOPIC_ID_FKEY, null);
 
-        return _thread;
+        return _topic;
+    }
+
+    private transient PostAttachmentPath _postAttachment;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.post_attachment</code> table
+     */
+    public PostAttachmentPath postAttachment() {
+        if (_postAttachment == null)
+            _postAttachment = new PostAttachmentPath(this, null, Keys.POST_ATTACHMENT__POST_ATTACHMENT_POST_ID_FKEY.getInverseKey());
+
+        return _postAttachment;
+    }
+
+    private transient PostFulltextPath _postFulltext;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.post_fulltext</code> table
+     */
+    public PostFulltextPath postFulltext() {
+        if (_postFulltext == null)
+            _postFulltext = new PostFulltextPath(this, null, Keys.POST_FULLTEXT__POST_FULLTEXT_POST_ID_FKEY.getInverseKey());
+
+        return _postFulltext;
+    }
+
+    /**
+     * Get the implicit many-to-many join path to the <code>public.asset</code>
+     * table
+     */
+    public AssetPath asset() {
+        return postAttachment().asset();
     }
 
     @Override

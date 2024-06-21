@@ -9,7 +9,13 @@ import org.jooq.OrderField;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
 
+import pl.piotrmacha.lurker.jooq.tables.Account;
+import pl.piotrmacha.lurker.jooq.tables.Asset;
+import pl.piotrmacha.lurker.jooq.tables.Board;
 import pl.piotrmacha.lurker.jooq.tables.FlywaySchemaHistory;
+import pl.piotrmacha.lurker.jooq.tables.Post;
+import pl.piotrmacha.lurker.jooq.tables.PostFulltext;
+import pl.piotrmacha.lurker.jooq.tables.Topic;
 
 
 /**
@@ -22,5 +28,12 @@ public class Indexes {
     // INDEX definitions
     // -------------------------------------------------------------------------
 
+    public static final Index ACCOUNT_OID_IDX = Internal.createIndex(DSL.name("account_oid_idx"), Account.ACCOUNT, new OrderField[] { Account.ACCOUNT.OID }, true);
+    public static final Index ASSET_URL_IDX = Internal.createIndex(DSL.name("asset_url_idx"), Asset.ASSET, new OrderField[] { Asset.ASSET.URL }, true);
+    public static final Index BOARD_OID_IDX = Internal.createIndex(DSL.name("board_oid_idx"), Board.BOARD, new OrderField[] { Board.BOARD.OID }, true);
     public static final Index FLYWAY_SCHEMA_HISTORY_S_IDX = Internal.createIndex(DSL.name("flyway_schema_history_s_idx"), FlywaySchemaHistory.FLYWAY_SCHEMA_HISTORY, new OrderField[] { FlywaySchemaHistory.FLYWAY_SCHEMA_HISTORY.SUCCESS }, false);
+    public static final Index POST_FULLTEXT_SEARCH_VECTOR_ENGLISH_IDX = Internal.createIndex(DSL.name("post_fulltext_search_vector_english_idx"), PostFulltext.POST_FULLTEXT, new OrderField[] { PostFulltext.POST_FULLTEXT.SEARCH_VECTOR_ENGLISH }, false);
+    public static final Index POST_FULLTEXT_SEARCH_VECTOR_POLISH_IDX = Internal.createIndex(DSL.name("post_fulltext_search_vector_polish_idx"), PostFulltext.POST_FULLTEXT, new OrderField[] { PostFulltext.POST_FULLTEXT.SEARCH_VECTOR_POLISH }, false);
+    public static final Index POST_OID_IDX = Internal.createIndex(DSL.name("post_oid_idx"), Post.POST, new OrderField[] { Post.POST.OID }, true);
+    public static final Index TOPIC_OID_IDX = Internal.createIndex(DSL.name("topic_oid_idx"), Topic.TOPIC, new OrderField[] { Topic.TOPIC.OID }, true);
 }

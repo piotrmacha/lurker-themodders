@@ -15,6 +15,7 @@ plugins {
     id("org.flywaydb.flyway") version "10.15.0"
     id("org.jooq.jooq-codegen-gradle") version "3.19.10"
     id("org.graalvm.buildtools.native") version "0.10.2"
+    id("io.freefair.lombok") version "8.6"
 }
 
 group = "pl.piotrmacha.lurker"
@@ -47,6 +48,7 @@ dependencies {
     implementation("org.jooq:jooq-codegen:3.19.10")
     implementation("org.jsoup:jsoup:1.17.2")
     implementation("com.google.guava:guava:33.2.1-jre")
+    implementation("com.github.rholder:guava-retrying:2.0.0")
     jooqCodegen("org.postgresql:postgresql")
     runtimeOnly("org.postgresql:postgresql")
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.8.0")

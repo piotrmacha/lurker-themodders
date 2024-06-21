@@ -44,5 +44,6 @@ bin/
 ### Applicaion ###
 .idea
 src/main/build
+src/main/assets
 .env
 spring-shell.log
