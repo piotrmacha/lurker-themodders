@@ -55,11 +55,11 @@ public class DownloadQueue {
     }
 
     private static boolean wasUrlAlreadyEnqueued(String url) {
-        return Task.dao().findBy(s -> s.where(Tables.DOWNLOAD_QUEUE.URL.eq(url))).isPresent() ||
-               TaskDone.dao().findBy(s -> s.where(
+        return Task.dao().findAll(s -> s.where(Tables.DOWNLOAD_QUEUE.URL.eq(url))).findAny().isPresent() ||
+               TaskDone.dao().findAll(s -> s.where(
                        Tables.DOWNLOAD_QUEUE_DONE.URL.eq(url),
                        Tables.DOWNLOAD_QUEUE_DONE.DONE_AT.le(OffsetDateTime.now().minusHours(1))
-               )).isPresent();
+               )).findAny().isPresent();
     }
 
     public enum TaskType {
