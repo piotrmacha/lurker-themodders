@@ -55,11 +55,7 @@ public class DownloadQueue {
     }
 
     private static boolean wasUrlAlreadyEnqueued(String url) {
-        return Task.dao().findAll(s -> s.where(Tables.DOWNLOAD_QUEUE.URL.eq(url))).findAny().isPresent() ||
-               TaskDone.dao().findAll(s -> s.where(
-                       Tables.DOWNLOAD_QUEUE_DONE.URL.eq(url),
-                       Tables.DOWNLOAD_QUEUE_DONE.DONE_AT.le(OffsetDateTime.now().minusHours(1))
-               )).findAny().isPresent();
+        return Task.dao().countByUrl(url) > 0 || TaskDone.dao().countByUrlAndDate(url, OffsetDateTime.now().minusHours(1)) > 0;
     }
 
     public enum TaskType {
@@ -147,6 +143,13 @@ public class DownloadQueue {
                 }
             }
 
+            public int countByUrl(String url) {
+                return context.select(count(Tables.DOWNLOAD_QUEUE.ID))
+                        .from(Tables.DOWNLOAD_QUEUE)
+                        .where(Tables.DOWNLOAD_QUEUE.URL.eq(url))
+                        .fetchSingleInto(Integer.class);
+            }
+
             @Override
             public Task save(Task entity) {
                 if (entity.id() == null) {
@@ -208,6 +211,16 @@ public class DownloadQueue {
             public TaskDoneDao(DSLContext context) {
                 super(context);
                 dao = this;
+            }
+
+            public int countByUrlAndDate(String url, OffsetDateTime date) {
+                return context.select(count(Tables.DOWNLOAD_QUEUE_DONE.ID))
+                        .from(Tables.DOWNLOAD_QUEUE_DONE)
+                        .where(
+                                Tables.DOWNLOAD_QUEUE_DONE.URL.eq(url),
+                                Tables.DOWNLOAD_QUEUE_DONE.DONE_AT.le(date)
+                        )
+                        .fetchSingleInto(Integer.class);
             }
 
             @Override
