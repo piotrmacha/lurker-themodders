@@ -45,13 +45,15 @@ public class DownloadService {
             .setThreadFactory(Thread.ofPlatform().factory())
             .setNameFormat("executor-%d")
             .build());
-    private final RateLimiter httpRateLimiter = RateLimiter.create(5.0);
+    private RateLimiter httpRateLimiter = RateLimiter.create(5.0);
     private Path assetsDirectory = Path.of("./assets/");
 
     @ShellMethod(value = "Build download queue", key = "build-index")
     public void buildIndex(
-            @ShellOption(value = "--uri", defaultValue = "https://themodders.org") URI uri
+            @ShellOption(value = "--uri", defaultValue = "https://themodders.org") URI uri,
+            @ShellOption(value = "--rps", defaultValue = "4.0") double rps
     ) throws IOException {
+        httpRateLimiter = RateLimiter.create(rps);
         PageInfo index = new PageInfo.Uri(uri);
         Document document = getDocument(uri.toString());
         indexPageProcessor.process(index, document, indexPageProcessor);
@@ -88,8 +90,10 @@ public class DownloadService {
 
     @ShellMethod(value = "Build download queue from new posts", key = "build-new-posts")
     public void buildNewPosts(
-            @ShellOption(value = "--uri", defaultValue = "https://themodders.org/index.php?action=recent") URI uri
+            @ShellOption(value = "--uri", defaultValue = "https://themodders.org/index.php?action=recent") URI uri,
+            @ShellOption(value = "--rps", defaultValue = "4.0") double rps
     ) throws IOException {
+        httpRateLimiter = RateLimiter.create(rps);
         Signal.handle(new Signal("INT"), signal -> {
             log.info("Existing...");
             executor.shutdown();
@@ -108,8 +112,10 @@ public class DownloadService {
 
     @ShellMethod(value = "Download topics from queue", key = "download-topics")
     public void downloadTopics(
-            @ShellOption(value = "--dir", defaultValue = "./assets/") String dir
+            @ShellOption(value = "--dir", defaultValue = "./assets/") String dir,
+            @ShellOption(value = "--rps", defaultValue = "4.0") double rps
     ) throws IOException {
+        httpRateLimiter = RateLimiter.create(rps);
         if (dir != null && !dir.isBlank()) {
             assetsDirectory = Path.of(dir);
         }
@@ -216,8 +222,8 @@ public class DownloadService {
         Retryer<Document> retryer = RetryerBuilder.<Document>newBuilder()
                 .retryIfExceptionOfType(IOException.class)
                 .retryIfRuntimeException()
-                .withWaitStrategy(WaitStrategies.randomWait(1, TimeUnit.SECONDS, 10, TimeUnit.SECONDS))
-                .withStopStrategy(StopStrategies.stopAfterDelay(1, TimeUnit.MINUTES))
+                .withWaitStrategy(WaitStrategies.exponentialWait(1, 30, TimeUnit.SECONDS))
+                .withStopStrategy(StopStrategies.stopAfterDelay(120, TimeUnit.SECONDS))
                 .build();
         try {
             return retryer.call(() -> {
@@ -234,7 +240,7 @@ public class DownloadService {
         Retryer<HttpResponse<byte[]>> retryer = RetryerBuilder.<HttpResponse<byte[]>>newBuilder()
                 .retryIfExceptionOfType(IOException.class)
                 .retryIfRuntimeException()
-                .withWaitStrategy(WaitStrategies.randomWait(1, TimeUnit.SECONDS, 10, TimeUnit.SECONDS))
+                .withWaitStrategy(WaitStrategies.exponentialWait(1, 10, TimeUnit.SECONDS))
                 .withStopStrategy(StopStrategies.stopAfterDelay(10, TimeUnit.SECONDS))
                 .retryIfResult(r -> r.statusCode() < 200 || r.statusCode() > 399)
                 .build();
