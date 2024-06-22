@@ -101,6 +101,7 @@ public class TopicPageProcessor extends DelegatePageProcessor {
     }
 
     private Account processAccount(Element postRoot) {
+        Pattern accountOidPattern = Pattern.compile("u=([0-9]+)");
         return selectFirst(".poster")
                 .map(element -> {
                     Element nick = selectFirst(element, ".nick a")
@@ -108,7 +109,8 @@ public class TopicPageProcessor extends DelegatePageProcessor {
                             .orElseThrow(() -> new RuntimeException("Invalid structure"));
                     String username = nick.text();
                     String accountUrl = nick.hasAttr("href") ? nick.attr("href") : "guest_" + username;
-                    String accountOid = Arrays.stream(accountUrl.split("=")).max(Comparator.naturalOrder()).orElse("guest_" + username);
+                    Matcher accountOidMatcher = accountOidPattern.matcher(accountUrl);
+                    String accountOid = accountOidMatcher.find() ? accountOidMatcher.group(1) : "guest_" + username;
 
                     return Account.dao().findByOid(accountOid)
                             .map(account -> {

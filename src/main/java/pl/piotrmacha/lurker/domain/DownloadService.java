@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.DSLContext;
 import org.jooq.Field;
+import org.jooq.Query;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.springframework.shell.standard.ShellComponent;
@@ -172,6 +173,32 @@ public class DownloadService {
         jooq.truncate(Tables.BOARD).cascade().execute();
         jooq.truncate(Tables.ACCOUNT).cascade().execute();
         jooq.truncate(Tables.ASSET).cascade().execute();
+    }
+
+    @ShellMethod(value = "Reschedule failures", key = "reschedule-failures")
+    public void rescheduleFailures() {
+        jooq.selectFrom(Tables.DOWNLOAD_QUEUE_FAILURE)
+                .fetch()
+                .forEach(failure -> {
+                    try {
+                        jooq.startTransaction().execute();
+                        jooq.insertInto(Tables.DOWNLOAD_QUEUE)
+                                .set(Tables.DOWNLOAD_QUEUE.ID, failure.getId())
+                                .set(Tables.DOWNLOAD_QUEUE.TYPE, failure.getType())
+                                .set(Tables.DOWNLOAD_QUEUE.URL, failure.getUrl())
+                                .set(Tables.DOWNLOAD_QUEUE.ENTITY_ID, failure.getEntityId())
+                                .set(Tables.DOWNLOAD_QUEUE.LOCKED_AT, (OffsetDateTime) null)
+                                .set(Tables.DOWNLOAD_QUEUE.CREATED_AT, failure.getCreatedAt())
+                                .execute();
+                        jooq.deleteFrom(Tables.DOWNLOAD_QUEUE_FAILURE)
+                                .where(Tables.DOWNLOAD_QUEUE_FAILURE.ID.eq(failure.getId()))
+                                .execute();
+                        jooq.commit().execute();
+                    } catch (Exception e) {
+                        log.error("Error rescheduling failure", e);
+                        jooq.rollback().execute();
+                    }
+                });
     }
 
     public void addTask(DownloadQueue.TaskType type, PageInfo.Uri pageInfo, Long entityId) {
